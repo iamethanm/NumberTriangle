@@ -1,36 +1,18 @@
 import java.io.*;
+import java.nio.file.*;
+import java.util.*;
 
 /**
- * This is the provided NumberTriangle class to be used in this coding task.
+ * NumberTriangle - tree-like structure where some nodes have two parents.
  *
- * Note: This is like a tree, but some nodes in the structure have two parents.
- *
- * The structure is shown below. Observe that the parents of e are b and c, whereas
- * d and f each only have one parent. Each row is complete and will never be missing
- * a node. So each row has one more NumberTriangle object than the row above it.
- *
- *                  a
- *                b   c
- *              d   e   f
- *            h   i   j   k
- *
- * Also note that this data structure is minimally defined and is only intended to
- * be constructed using the loadTriangle method, which you will implement
- * in this file. We have not included any code to enforce the structure noted above,
- * and you don't have to write any either.
- *
- *
- * See NumberTriangleTest.java for a few basic test cases.
- *
- * Extra: If you decide to solve the Project Euler problems (see main),
- *        feel free to add extra methods to this class. Just make sure that your
- *        code still compiles and runs so that we can run the tests on your code.
- *
+ *                 a
+ *               b   c
+ *             d   e   f
+ *           h   i   j   k
  */
 public class NumberTriangle {
 
     private int root;
-
     private NumberTriangle left;
     private NumberTriangle right;
 
@@ -38,126 +20,121 @@ public class NumberTriangle {
         this.root = root;
     }
 
-    public void setLeft(NumberTriangle left) {
-        this.left = left;
-    }
-
-
-    public void setRight(NumberTriangle right) {
-        this.right = right;
-    }
-
-    public int getRoot() {
-        return root;
-    }
-
+    public void setLeft(NumberTriangle left) { this.left = left; }
+    public void setRight(NumberTriangle right) { this.right = right; }
+    public int getRoot() { return root; }
+    public boolean isLeaf() { return right == null && left == null; }
 
     /**
-     * [not for credit]
-     * Set the root of this NumberTriangle to be the max path sum
-     * of this NumberTriangle, as defined in Project Euler problem 18.
-     * After this method is called, this NumberTriangle should be a leaf.
-     *
-     * Hint: think recursively and use the idea of partial tracing from first year :)
-     *
-     * Note: a NumberTriangle contains at least one value.
-     */
-    public void maxSumPath() {
-        // for fun [not for credit]:
-    }
-
-
-    public boolean isLeaf() {
-        return right == null && left == null;
-    }
-
-
-    /**
-     * Follow path through this NumberTriangle structure ('l' = left; 'r' = right) and
-     * return the root value at the end of the path. An empty string will return
-     * the root of the NumberTriangle.
-     *
-     * You can decide if you want to use a recursive or an iterative approach in your solution.
-     *
-     * You can assume that:
-     *      the length of path is less than the height of this NumberTriangle structure.
-     *      each character in the string is either 'l' or 'r'
-     *
-     * @param path the path to follow through this NumberTriangle
-     * @return the root value at the location indicated by path
-     *
+     * Follow 'l' (left) / 'r' (right) and return the value at the end.
      */
     public int retrieve(String path) {
-        // TODO implement this method
-        return -1;
+        NumberTriangle cur = this;
+        if (path == null || path.isEmpty()) {
+            return cur.root;
+        }
+        for (int i = 0; i < path.length(); i++) {
+            char c = path.charAt(i);
+            if (c == 'l') {
+                cur = cur.left;
+            } else if (c == 'r') {
+                cur = cur.right;
+            } else {
+                throw new IllegalArgumentException("Invalid path char: " + c);
+            }
+            if (cur == null) {
+                throw new IllegalStateException("Path goes past a leaf at index " + i);
+            }
+        }
+        return cur.root;
     }
 
-    /** Read in the NumberTriangle structure from a file.
-     *
-     * You may assume that it is a valid format with a height of at least 1,
-     * so there is at least one line with a number on it to start the file.
-     *
-     * See resources/input_tree.txt for an example NumberTriangle format.
-     *
-     * @param fname the file to load the NumberTriangle structure from
-     * @return the topmost NumberTriangle object in the NumberTriangle structure read from the specified file
-     * @throws IOException may naturally occur if an issue reading the file occurs
+    /**
+     * Load a NumberTriangle from a resource/file (robust for CI & local).
      */
     public static NumberTriangle loadTriangle(String fname) throws IOException {
-    // 1) 先从 classpath 读（最标准的方式，覆盖 test/main 的 resources）
-    InputStream in = NumberTriangle.class.getClassLoader().getResourceAsStream(fname);
-    if (in == null) {
-        in = NumberTriangle.class.getResourceAsStream("/" + fname);
+        try (BufferedReader br = openReader(fname)) {
+            String line;
+            NumberTriangle top = null;
+            List<NumberTriangle> prevRow = null;
+
+            while ((line = br.readLine()) != null) {
+                line = stripBom(line).trim();
+                if (line.isEmpty()) continue;
+
+                String[] parts = line.split("\\s+");
+                List<NumberTriangle> currRow = new ArrayList<>(parts.length);
+                for (String s : parts) {
+                    currRow.add(new NumberTriangle(Integer.parseInt(s)));
+                }
+
+                if (top == null) top = currRow.get(0);
+
+                if (prevRow != null) {
+                    for (int i = 0; i < prevRow.size(); i++) {
+                        prevRow.get(i).setLeft(currRow.get(i));
+                        prevRow.get(i).setRight(currRow.get(i + 1));
+                    }
+                }
+                prevRow = currRow;
+            }
+
+            if (top == null) {
+                throw new IOException("Empty triangle file: " + fname);
+            }
+            return top;
+        }
     }
 
-    // 2) 如果没读到，再尝试常见的源码路径（CI、本地都适用）
-    if (in == null) {
-        String[] candidates = new String[] {
+    // ---------- helpers ----------
+
+    /** Try classpath (多种方式) -> 若无，再尝试常见文件系统路径。 */
+    private static BufferedReader openReader(String fname) throws IOException {
+        InputStream in = null;
+
+        // 1) Context ClassLoader
+        ClassLoader cl = Thread.currentThread().getContextClassLoader();
+        if (cl != null) in = cl.getResourceAsStream(fname);
+
+        // 2) 相对类路径（带 / 的绝对）
+        if (in == null) in = NumberTriangle.class.getResourceAsStream("/" + fname);
+
+        // 3) 仍然找不到，走文件系统的常见位置
+        if (in == null) {
+            String[] candidates = new String[]{
+                fname,
                 "src/test/resources/" + fname,
                 "src/main/resources/" + fname,
-                fname // 当前工作目录下
-        };
-        for (String p : candidates) {
-            java.io.File f = new java.io.File(p);
-            if (f.exists()) {
-                in = new java.io.FileInputStream(f);
-                break;
-            }
-        }
-    }
-
-    if (in == null) {
-        throw new java.io.FileNotFoundException(
-                "Could not find resource '" + fname + "' on classpath or filesystem.");
-    }
-
-    // 3) 按行读取并构建三角结构
-    try (BufferedReader br = new BufferedReader(new InputStreamReader(in))) {
-        NumberTriangle top = null;
-        java.util.List<NumberTriangle> prevRow = null;
-
-        String line;
-        while ((line = br.readLine()) != null) {
-            line = line.trim();
-            if (line.isEmpty()) continue;
-
-            String[] parts = line.split("\\s+");
-            java.util.List<NumberTriangle> currRow = new java.util.ArrayList<>(parts.length);
-            for (String s : parts) {
-                currRow.add(new NumberTriangle(Integer.parseInt(s)));
-            }
-
-            if (top == null) top = currRow.get(0);
-
-            if (prevRow != null) {
-                for (int i = 0; i < prevRow.size(); i++) {
-                    prevRow.get(i).setLeft(currRow.get(i));
-                    prevRow.get(i).setRight(currRow.get(i + 1));
+                // 兼容你仓库层级里出现过的子目录名
+                "NumberTriangle/src/test/resources/" + fname,
+                "NumberTriangle/src/main/resources/" + fname
+            };
+            for (String p : candidates) {
+                Path path = Paths.get(p);
+                if (Files.exists(path)) {
+                    return Files.newBufferedReader(path);
                 }
             }
-            prevRow = currRow;
+            throw new FileNotFoundException("Could not locate resource: " + fname);
         }
-        return top;
+
+        return new BufferedReader(new InputStreamReader(in));
+    }
+
+    /** 去掉可能的 UTF-8 BOM，避免第一行第一个数字解析失败。 */
+    private static String stripBom(String s) {
+        return (!s.isEmpty() && s.charAt(0) == '\uFEFF') ? s.substring(1) : s;
+    }
+
+    // [not for credit]
+    public void maxSumPath() {
+        // optional
+    }
+
+    public static void main(String[] args) throws IOException {
+        NumberTriangle mt = NumberTriangle.loadTriangle("input_tree.txt");
+        mt.maxSumPath();
+        System.out.println(mt.getRoot());
     }
 }
 
