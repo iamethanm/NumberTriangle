@@ -104,41 +104,60 @@ public class NumberTriangle {
      * @throws IOException may naturally occur if an issue reading the file occurs
      */
     public static NumberTriangle loadTriangle(String fname) throws IOException {
-        // open the file and get a BufferedReader object whose methods
-        // are more convenient to work with when reading the file contents.
-        InputStream inputStream = NumberTriangle.class.getClassLoader().getResourceAsStream(fname);
-        BufferedReader br = new BufferedReader(new InputStreamReader(inputStream));
+    // 1) 先从 classpath 读（最标准的方式，覆盖 test/main 的 resources）
+    InputStream in = NumberTriangle.class.getClassLoader().getResourceAsStream(fname);
+    if (in == null) {
+        in = NumberTriangle.class.getResourceAsStream("/" + fname);
+    }
 
-
-        // TODO define any variables that you want to use to store things
-
-        // will need to return the top of the NumberTriangle,
-        // so might want a variable for that.
-        NumberTriangle top = null;
-
-        String line = br.readLine();
-        while (line != null) {
-
-            // remove when done; this line is included so running starter code prints the contents of the file
-            System.out.println(line);
-
-            // TODO process the line
-
-            //read the next line
-            line = br.readLine();
+    // 2) 如果没读到，再尝试常见的源码路径（CI、本地都适用）
+    if (in == null) {
+        String[] candidates = new String[] {
+                "src/test/resources/" + fname,
+                "src/main/resources/" + fname,
+                fname // 当前工作目录下
+        };
+        for (String p : candidates) {
+            java.io.File f = new java.io.File(p);
+            if (f.exists()) {
+                in = new java.io.FileInputStream(f);
+                break;
+            }
         }
-        br.close();
+    }
+
+    if (in == null) {
+        throw new java.io.FileNotFoundException(
+                "Could not find resource '" + fname + "' on classpath or filesystem.");
+    }
+
+    // 3) 按行读取并构建三角结构
+    try (BufferedReader br = new BufferedReader(new InputStreamReader(in))) {
+        NumberTriangle top = null;
+        java.util.List<NumberTriangle> prevRow = null;
+
+        String line;
+        while ((line = br.readLine()) != null) {
+            line = line.trim();
+            if (line.isEmpty()) continue;
+
+            String[] parts = line.split("\\s+");
+            java.util.List<NumberTriangle> currRow = new java.util.ArrayList<>(parts.length);
+            for (String s : parts) {
+                currRow.add(new NumberTriangle(Integer.parseInt(s)));
+            }
+
+            if (top == null) top = currRow.get(0);
+
+            if (prevRow != null) {
+                for (int i = 0; i < prevRow.size(); i++) {
+                    prevRow.get(i).setLeft(currRow.get(i));
+                    prevRow.get(i).setRight(currRow.get(i + 1));
+                }
+            }
+            prevRow = currRow;
+        }
         return top;
     }
-
-    public static void main(String[] args) throws IOException {
-
-        NumberTriangle mt = NumberTriangle.loadTriangle("input_tree.txt");
-
-        // [not for credit]
-        // you can implement NumberTriangle's maxPathSum method if you want to try to solve
-        // Problem 18 from project Euler [not for credit]
-        mt.maxSumPath();
-        System.out.println(mt.getRoot());
-    }
 }
+
