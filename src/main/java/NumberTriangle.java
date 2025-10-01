@@ -65,36 +65,66 @@ public class NumberTriangle {
      * Tries classpath first (recommended), then common repo paths for CI fallbacks.
      */
     public static NumberTriangle loadTriangle(String fname) throws IOException {
-        try (BufferedReader br = new BufferedReader(new InputStreamReader(openResource(fname)))) {
+    // 1) 先按“主/测试 classpath 资源”找
+    InputStream in = NumberTriangle.class.getClassLoader().getResourceAsStream(fname);
+    if (in == null) {
+        in = Thread.currentThread().getContextClassLoader().getResourceAsStream(fname);
+    }
 
-            NumberTriangle top = null;
-            List<NumberTriangle> prevRow = null;
-
-            String line;
-            while ((line = br.readLine()) != null) {
-                line = line.trim();
-                if (line.isEmpty()) continue;
-
-                String[] parts = line.split("\\s+");
-                List<NumberTriangle> currRow = new ArrayList<>(parts.length);
-
-                for (String s : parts) {
-                    currRow.add(new NumberTriangle(Integer.parseInt(s)));
-                }
-
-                if (top == null) top = currRow.get(0);
-
-                if (prevRow != null) {
-                    for (int i = 0; i < prevRow.size(); i++) {
-                        prevRow.get(i).setLeft(currRow.get(i));
-                        prevRow.get(i).setRight(currRow.get(i + 1));
-                    }
-                }
-                prevRow = currRow;
+    // 2) 再按常见磁盘路径兜底（本地/CI 都通用）
+    if (in == null) {
+        java.nio.file.Path[] candidates = new java.nio.file.Path[]{
+                java.nio.file.Paths.get("src", "main", "resources", fname),
+                java.nio.file.Paths.get("src", "test", "resources", fname),
+                java.nio.file.Paths.get(fname)
+        };
+        for (java.nio.file.Path p : candidates) {
+            if (java.nio.file.Files.exists(p)) {
+                in = java.nio.file.Files.newInputStream(p);
+                break;
             }
-            return top;
         }
     }
+
+    if (in == null) {
+        throw new java.io.FileNotFoundException("Resource not found: " + fname +
+                " (checked classpath and common disk locations)");
+    }
+
+    try (BufferedReader br = new BufferedReader(new InputStreamReader(in, java.nio.charset.StandardCharsets.UTF_8))) {
+        NumberTriangle top = null;
+        java.util.List<NumberTriangle> prev = null;
+
+        String line;
+        while ((line = br.readLine()) != null) {
+            line = line.trim();
+            if (line.isEmpty()) continue;
+
+            String[] parts = line.split("\\s+");
+            java.util.List<NumberTriangle> curr = new java.util.ArrayList<>(parts.length);
+            for (String s : parts) {
+                curr.add(new NumberTriangle(Integer.parseInt(s)));
+            }
+
+            if (top == null) top = curr.get(0);
+
+            if (prev != null) {
+                for (int i = 0; i < prev.size(); i++) {
+                    prev.get(i).setLeft(curr.get(i));
+                    prev.get(i).setRight(curr.get(i + 1));
+                }
+            }
+            prev = curr;
+        }
+
+        if (top == null) {
+            throw new IOException("Resource '" + fname + "' is empty or unreadable.");
+        }
+        return top;
+    }
+}
+
+    
 
     /** Try several ways to locate the resource so CI 不再 NPE */
     private static InputStream openResource(String fname) throws IOException {
