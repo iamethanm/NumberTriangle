@@ -1,14 +1,20 @@
 import java.io.*;
-import java.nio.file.*;
-import java.util.*;
+import java.net.URL;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
- * NumberTriangle - tree-like structure where some nodes have two parents.
+ * NumberTriangle: a tiny DAG-like triangle where some nodes can have two parents.
  *
- *                 a
- *               b   c
- *             d   e   f
- *           h   i   j   k
+ *               a
+ *             b   c
+ *           d   e   f
+ *         h   i   j   k
+ *
+ * Build it with loadTriangle(fname) and read values with retrieve("lr...").
  */
 public class NumberTriangle {
 
@@ -23,16 +29,21 @@ public class NumberTriangle {
     public void setLeft(NumberTriangle left) { this.left = left; }
     public void setRight(NumberTriangle right) { this.right = right; }
     public int getRoot() { return root; }
+
+    public void maxSumPath() {
+        // [not for credit]
+    }
+
     public boolean isLeaf() { return right == null && left == null; }
 
     /**
-     * Follow 'l' (left) / 'r' (right) and return the value at the end.
+     * Follow a path ('l' for left, 'r' for right) and return the value at the end.
+     * Empty path returns the root.
      */
     public int retrieve(String path) {
         NumberTriangle cur = this;
-        if (path == null || path.isEmpty()) {
-            return cur.root;
-        }
+        if (path == null || path.isEmpty()) return cur.root;
+
         for (int i = 0; i < path.length(); i++) {
             char c = path.charAt(i);
             if (c == 'l') {
@@ -50,20 +61,23 @@ public class NumberTriangle {
     }
 
     /**
-     * Load a NumberTriangle from a resource/file (robust for CI & local).
+     * Build a NumberTriangle from a text file, one row per line, numbers separated by spaces.
+     * Tries classpath first (recommended), then common repo paths for CI fallbacks.
      */
     public static NumberTriangle loadTriangle(String fname) throws IOException {
-        try (BufferedReader br = openReader(fname)) {
-            String line;
+        try (BufferedReader br = new BufferedReader(new InputStreamReader(openResource(fname)))) {
+
             NumberTriangle top = null;
             List<NumberTriangle> prevRow = null;
 
+            String line;
             while ((line = br.readLine()) != null) {
-                line = stripBom(line).trim();
+                line = line.trim();
                 if (line.isEmpty()) continue;
 
                 String[] parts = line.split("\\s+");
                 List<NumberTriangle> currRow = new ArrayList<>(parts.length);
+
                 for (String s : parts) {
                     currRow.add(new NumberTriangle(Integer.parseInt(s)));
                 }
@@ -78,57 +92,38 @@ public class NumberTriangle {
                 }
                 prevRow = currRow;
             }
-
-            if (top == null) {
-                throw new IOException("Empty triangle file: " + fname);
-            }
             return top;
         }
     }
 
-    // ---------- helpers ----------
-
-    /** Try classpath (多种方式) -> 若无，再尝试常见文件系统路径。 */
-    private static BufferedReader openReader(String fname) throws IOException {
-        InputStream in = null;
-
-        // 1) Context ClassLoader
+    /** Try several ways to locate the resource so CI 不再 NPE */
+    private static InputStream openResource(String fname) throws IOException {
+        // 1) classpath via context ClassLoader
         ClassLoader cl = Thread.currentThread().getContextClassLoader();
-        if (cl != null) in = cl.getResourceAsStream(fname);
-
-        // 2) 相对类路径（带 / 的绝对）
-        if (in == null) in = NumberTriangle.class.getResourceAsStream("/" + fname);
-
-        // 3) 仍然找不到，走文件系统的常见位置
-        if (in == null) {
-            String[] candidates = new String[]{
-                fname,
-                "src/test/resources/" + fname,
-                "src/main/resources/" + fname,
-                // 兼容你仓库层级里出现过的子目录名
-                "NumberTriangle/src/test/resources/" + fname,
-                "NumberTriangle/src/main/resources/" + fname
-            };
-            for (String p : candidates) {
-                Path path = Paths.get(p);
-                if (Files.exists(path)) {
-                    return Files.newBufferedReader(path);
-                }
-            }
-            throw new FileNotFoundException("Could not locate resource: " + fname);
+        if (cl == null) cl = NumberTriangle.class.getClassLoader();
+        if (cl != null) {
+            InputStream in = cl.getResourceAsStream(fname);
+            if (in != null) return in;
         }
 
-        return new BufferedReader(new InputStreamReader(in));
-    }
+        // 2) classpath via NumberTriangle.class (leading slash)
+        URL url = NumberTriangle.class.getResource("/" + fname);
+        if (url != null) return url.openStream();
 
-    /** 去掉可能的 UTF-8 BOM，避免第一行第一个数字解析失败。 */
-    private static String stripBom(String s) {
-        return (!s.isEmpty() && s.charAt(0) == '\uFEFF') ? s.substring(1) : s;
-    }
+        // 3) Fallback to repo paths (for GitHub Actions or running from project root)
+        Path[] candidates = new Path[] {
+                Paths.get(fname),
+                Paths.get("src", "main", "resources", fname),
+                Paths.get("src", "test", "resources", fname)
+        };
+        for (Path p : candidates) {
+            if (Files.exists(p)) return Files.newInputStream(p);
+        }
 
-    // [not for credit]
-    public void maxSumPath() {
-        // optional
+        throw new FileNotFoundException(
+                "Could not find resource \"" + fname + "\" on classpath or in "
+                        + candidates[0] + ", " + candidates[1] + ", " + candidates[2]
+        );
     }
 
     public static void main(String[] args) throws IOException {
@@ -137,4 +132,3 @@ public class NumberTriangle {
         System.out.println(mt.getRoot());
     }
 }
-
