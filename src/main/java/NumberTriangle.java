@@ -70,65 +70,45 @@ public class NumberTriangle {
      * if the file cannot be found.
      */
     public static NumberTriangle loadTriangle(String fname) throws IOException {
-        InputStream in = null;
+    // 先从类路径根部找（兼容 test/resources 与 main/resources）
+    InputStream in = NumberTriangle.class.getResourceAsStream("/" + fname);
+    if (in == null) {
+        // 再试一次用上下文 ClassLoader（有些运行器用这个）
+        in = Thread.currentThread().getContextClassLoader().getResourceAsStream(fname);
+    }
+    if (in == null) {
+        throw new FileNotFoundException("Resource not found on classpath: " + fname);
+    }
 
-        // --- Try classpath (several ways) ---
-        ClassLoader ctx = Thread.currentThread().getContextClassLoader();
-        if (ctx != null) in = ctx.getResourceAsStream(fname);
-        if (in == null) in = NumberTriangle.class.getClassLoader().getResourceAsStream(fname);
-        if (in == null) in = NumberTriangle.class.getResourceAsStream("/" + fname);
-        if (in == null) in = NumberTriangle.class.getResourceAsStream(fname);
+    NumberTriangle top = null;
+    java.util.List<NumberTriangle> prevRow = null;
 
-        // --- Fallback to common filesystem locations (for CI quirks) ---
-        if (in == null) {
-            String[] candidates = {
-                    fname,
-                    "src/main/resources/" + fname,
-                    "src/test/resources/" + fname,
-                    "resources/" + fname
-            };
-            for (String p : candidates) {
-                Path path = Paths.get(p);
-                if (Files.exists(path)) {
-                    in = Files.newInputStream(path);
-                    break;
+    try (BufferedReader br = new BufferedReader(new InputStreamReader(in, java.nio.charset.StandardCharsets.UTF_8))) {
+        String line;
+        while ((line = br.readLine()) != null) {
+            line = line.trim();
+            if (line.isEmpty()) continue;
+
+            String[] parts = line.split("\\s+");
+            java.util.List<NumberTriangle> currRow = new java.util.ArrayList<>(parts.length);
+            for (String s : parts) {
+                currRow.add(new NumberTriangle(Integer.parseInt(s)));
+            }
+
+            if (top == null) top = currRow.get(0);
+
+            if (prevRow != null) {
+                for (int i = 0; i < prevRow.size(); i++) {
+                    prevRow.get(i).setLeft(currRow.get(i));
+                    prevRow.get(i).setRight(currRow.get(i + 1));
                 }
             }
-        }
-
-        if (in == null) {
-            throw new FileNotFoundException(
-                    "Could not locate resource '" + fname + "' on classpath or filesystem.");
-        }
-
-        try (BufferedReader br = new BufferedReader(new InputStreamReader(in))) {
-            NumberTriangle top = null;
-            List<NumberTriangle> prevRow = null;
-
-            String line;
-            while ((line = br.readLine()) != null) {
-                line = line.trim();
-                if (line.isEmpty()) continue;
-
-                String[] parts = line.split("\\s+");
-                List<NumberTriangle> currRow = new ArrayList<>(parts.length);
-                for (String s : parts) {
-                    currRow.add(new NumberTriangle(Integer.parseInt(s)));
-                }
-
-                if (top == null) top = currRow.get(0);
-
-                if (prevRow != null) {
-                    for (int i = 0; i < prevRow.size(); i++) {
-                        prevRow.get(i).setLeft(currRow.get(i));
-                        prevRow.get(i).setRight(currRow.get(i + 1));
-                    }
-                }
-                prevRow = currRow;
-            }
-            return top;
+            prevRow = currRow;
         }
     }
+    return top;
+}
+
 
     public static void main(String[] args) throws IOException {
         NumberTriangle mt = NumberTriangle.loadTriangle("input_tree.txt");
